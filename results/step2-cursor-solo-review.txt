@@ -1,5 +1,5 @@
 PR DESCRIPTION DRAFTER — SECURITY & DESIGN REVIEW
-Single-Model Review (Claude Sonnet 4.6)
+Cursor Agent Solo Review (Claude Sonnet 4.6)
 Date: 2026-04-25
 Reviewed document: /root/pr-drafter/build-plan.md (493 lines)
 

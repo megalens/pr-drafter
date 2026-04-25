@@ -14,9 +14,9 @@ A self-hosted git daemon that watches local branches, generates PR descriptions 
 
 We reviewed `build-plan.md` two ways:
 
-### Single model (Claude Sonnet 4.6)
+### Cursor Agent solo (Claude Sonnet 4.6, single model)
 
-One prompt, one model. Found **23 vulnerabilities:**
+One prompt, one model. Cursor Agent found **23 vulnerabilities:**
 
 | Severity | Count |
 |----------|-------|
@@ -25,7 +25,7 @@ One prompt, one model. Found **23 vulnerabilities:**
 | Medium | 8 |
 | Low | 5 |
 
-Caught the core issues: command injection via git subprocess args, prompt injection from repo files, token exfiltration through LLM payloads, path traversal in state store, TOCTOU races, OAuth CSRF, SSRF via configurable endpoints.
+Cursor caught the core issues: command injection via git subprocess args, prompt injection from repo files, token exfiltration through LLM payloads, path traversal in state store, TOCTOU races, OAuth CSRF, SSRF via configurable endpoints.
 
 ### MegaLens MCP (3 engines + GPT 5.4 judge)
 
@@ -42,7 +42,7 @@ MegaLens used 3 independent engines (Grok 4.1 Fast, DeepSeek V3.2, Gemini 3.1 Pr
 
 ### The delta: 22 additional findings
 
-Issues the single model missed but multi-engine debate caught:
+Issues that Cursor's solo review missed but multi-engine debate caught:
 
 - **Git config helper execution** — repository `.gitconfig` can define custom diff/merge tools, credential helpers, and aliases that execute arbitrary code when the daemon runs `git -C <repo> diff`. All 3 engines missed this; the GPT 5.4 judge caught it independently (Critical)
 - **OAuth callback port hijacking** — fixed localhost port `8765` lets any local process race to bind first and intercept the authorization code. Judge-only finding (High)
@@ -80,7 +80,7 @@ When engines disagree, that's signal. Grok found YAML deserialization RCE that D
 ## Review outputs
 
 - [`build-plan.md`](build-plan.md) — Full V1 engineering build plan
-- [`results/step2-cursor-solo-review.txt`](results/step2-cursor-solo-review.txt) — Single-model review (23 findings)
+- [`results/step2-cursor-solo-review.txt`](results/step2-cursor-solo-review.txt) — Cursor Agent solo review (23 findings)
 - [`results/step3-megalens-audit.txt`](results/step3-megalens-audit.txt) — MegaLens multi-engine audit (45 findings)
 
 ## The tool itself
