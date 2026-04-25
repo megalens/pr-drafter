@@ -1,0 +1,438 @@
+PR DESCRIPTION DRAFTER — MULTI-ENGINE SECURITY AUDIT
+MegaLens MCP (3 engines + GPT 5.4 judge)
+Date: 2026-04-25
+Reviewed document: /root/pr-drafter/build-plan.md (493 lines)
+
+================================================================================
+CONFIGURATION
+================================================================================
+  Engines: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Judge: GPT 5.4
+  Tier: standard
+  Mode: multi
+  Rounds: 2 (structured debate)
+  Total time: 418s (7.0 min)
+  Total cost: $0.22 (BYOK via OpenRouter)
+
+================================================================================
+SEVERITY SUMMARY
+================================================================================
+  Critical   │ 7
+  High       │ 10
+  Medium     │ 26
+  Low        │ 2
+  ----------┼------
+  Total      │ 45
+
+================================================================================
+SYNTHESIS (GPT 5.4 Judge)
+================================================================================
+ChatGPT: The largest missed risks are not the already-discussed shell/path issues, but hidden execution and trust-boundary problems: Git itself can invoke external helpers/configured programs, localhost OAuth can be intercepted by local processes, and verbatim PR publishing creates a second-order content abuse channel. These are material design gaps that should be addressed before implementation.
+
+================================================================================
+FINDINGS
+================================================================================
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-002: Critical command injection via unsanitized repo_path in git -C commands
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §3.2: 'git -C /path/to/repo ...' with repo_path from config.yaml. §6.1: 'Local config.yaml | Path traversal | Only allowlisted keys; validate repo paths'. No explicit path canonicalization or shell escaping.
+    [Security Auditor]: §3.2: 'git -C /path/to/repo ...' with repo_path from config.yaml. §6.1: 'Local config.yaml | Path traversal | Only allowlisted keys; validate repo paths'. No path canonicalization.
+    [Vulnerability Analyst]: §3.2: Example commands use 'git -C /path/to/repo ...'. §1.1: Repo path sourced from config.yaml. No sanitization or validation is specified before substitution into shell command.
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-012: No handling for force-pushes or ref rewrites
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §3.4: 'Force-push... documented with behaviors' but no specifics in plan.
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-021: Missing egress filtering enforcement
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §6.3: 'Egress policy: Allowlist of hostnames only.' — not enforced in architecture.
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-029: Unsafe YAML deserialization risks RCE
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.1/§7: 'YAML/JSON under ~/.config/pr-drafter/config.yaml'. No safe parser specified.
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-032: State corruption on force-push due to SHA-based tracking
+  Category: Observation
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §3.4: 'Force-push... documented'. State tracks last HEAD sha.
+    [Vulnerability Analyst]: §1.2 & §8: State store tracks 'last_sha for ref'. §3.4 mentions 'Force-push... documented with behaviors' but no specific logic.
+
+--------------------------------------------------------------------------------
+[CRITICAL] F-034: Git subprocess execution lacks timeouts and output limits (resource exhaustion)
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §3.2: Example git commands (log, diff) are shown without any execution constraints. §4.2 mentions truncating diff output but not limiting the subprocess itself.
+
+--------------------------------------------------------------------------------
+[CRITICAL] JUDGE-GPT-5-4-2-F-02: Repository-controlled Git config can trigger arbitrary helper/program execution during git subprocesses
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: The plan relies on "Shell out to git(1) only" and includes commands such as `git -C /path/to/repo fetch origin --prune --quiet`, `git ... diff`, and `git ... log`. It does not specify clearing or overriding Git configuration, hooks, aliases, external diff/merge tools, credential helpers, pager, or p
+
+--------------------------------------------------------------------------------
+[HIGH] F-003: High-risk prompt injection from untrusted repo files (.pr-style.md, commits, diffs)
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §4.3: 'User message: global context.md + repo .pr-style.md + commits + files + diff'. §6.1: 'Repo files | Prompt injection | System prompt hardening; never echo secrets; strip unknown JSON keys'. No content filtering mentioned.
+    [Security Auditor]: §4.3: 'User message: global context.md + repo .pr-style.md + commits + files + diff'. §6.1: 'System prompt hardening; never echo secrets'. No filtering.
+    [Vulnerability Analyst]: §4.3: 'User message: global context.md + repo .pr-style.md + commits + files + diff'. §6.1 lists 'Prompt injection' risk with mitigation 'System prompt hardening; never echo secrets; strip unknown JSON keys', but provides no concrete sanitization steps.
+
+--------------------------------------------------------------------------------
+[HIGH] F-008: Race condition in state store update on concurrent events
+  Category: Observation
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §8: 'State consistency: commit state only after successful API response. Atomic write: temp → fsync → rename'. But watcher debounce may not cover all races.
+    [Vulnerability Analyst]: §8: 'State consistency: commit state only after successful API response. Atomic write: temp → fsync → rename.' — assumes single daemon instance.
+    [Security Auditor]: §8: 'Atomic write: temp → fsync → rename'. Debounce may miss rapid events.
+
+--------------------------------------------------------------------------------
+[HIGH] F-011: Predictable PID lock file path vulnerable to symlink attack
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.1: 'lock file ~/.config/pr-drafter/pr-drafter.pid + flock'. Fixed path.
+    [Security Auditor]: §1.1: 'lock file ~/.config/pr-drafter/pr-drafter.pid + flock'. Fixed path.
+
+--------------------------------------------------------------------------------
+[HIGH] F-016: Command injection via unsanitized branch/ref names in git commands
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §3.2: 'git -C /path/to/repo log --reverse --format=%H%n%s%n%b%n---COMMIT--- refs/heads/feature/foo ^refs/heads/main' — refs come from filesystem without sanitization
+    [Security Auditor]: §3.2: 'git ... log ... refs/heads/feature/foo ^refs/heads/main'; refs from FS watcher without sanitization.
+
+--------------------------------------------------------------------------------
+[HIGH] F-018: LLM prompt injection via .pr-style.md/context.md
+  Category: Security
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §6.1: 'Treat as untrusted text; same caps' — truncation only, no sanitization of prompt instructions.
+
+--------------------------------------------------------------------------------
+[HIGH] F-026: Plaintext GitHub token storage vulnerable to local compromise
+  Category: Security
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §2.4: 'File: ~/.config/pr-drafter/github-token.json, file mode 0600'. No keyring/encryption.
+
+--------------------------------------------------------------------------------
+[HIGH] F-035: Symlink attack vulnerability in repo_path and state file paths
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §1.1: 'State store | JSON: ~/.config/pr-drafter/state/{sanitized_repo_path}.json'. No definition of 'sanitized'. Startup validates path but does not check for symlinks.
+
+--------------------------------------------------------------------------------
+[HIGH] F-036: SIGHUP reload mechanism is susceptible to config injection
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §1.3: 'Reload (SIGHUP): Re-read config.yaml and .pr-style.md / context.md paths.'
+
+--------------------------------------------------------------------------------
+[HIGH] JUDGE-GPT-5-4-1-F-01: OAuth callback on fixed localhost port enables code interception by a local process
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: §2.1 specifies a fixed callback URL: "http://127.0.0.1:8765/oauth/callback". The plan discusses CSRF state validation but does not address port binding races, listener exclusivity, or the possibility that another local process binds 127.0.0.1:8765 first and captures the authorization code.
+
+Reasonin
+
+--------------------------------------------------------------------------------
+[HIGH] JUDGE-GPT-5-4-3-F-03: Remote fetch can use dangerous transport/protocol behaviors unless Git transport is restricted
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: §3.2 includes `git -C /path/to/repo fetch origin --prune --quiet` and the trust posture says only intentional egress is to the LLM provider and GitHub API. The plan does not constrain Git's own network transports, sub-protocols, or credential prompting during fetch.
+
+Reasoning: A repository's `origi
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-001: Incomplete OAuth flow implementation - no local HTTP server for callback handling
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §2.1: 'Registered callback (local daemon): http://127.0.0.1:8765/oauth/callback'. §2.2 lists authorize/token endpoints but no mention of daemon listening on port 8765 or handling GET callback with code/state.
+    [Security Auditor]: §2.1: 'Registered callback (local daemon): http://127.0.0.1:8765/oauth/callback'. §2.2 lists authorize/token endpoints but no mention of daemon listening on port 8765 or handling GET callback with code/state.
+    [Vulnerability Analyst]: §2.1: Specifies 'Registered callback (local daemon): http://127.0.0.1:8765/oauth/callback'. §2.2 lists authorize/token endpoints but the plan contains no component or design for a local HTTP server listening on port 8765 to handle the GET callback with code/state.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-004: GitHub token stored in plaintext file without memory protection or refresh logic
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §2.4: 'File: ~/.config/pr-drafter/github-token.json, file mode 0600'. No mention of token refresh (OAuth apps tokens don't expire but can be revoked).
+    [Vulnerability Analyst]: §2.4: 'File: ~/.config/pr-drafter/github-token.json, file mode 0600'. No mention of using OS keyring, memory locking (mlock), or handling token expiration/revocation.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-005: Broad 'repo' OAuth scope required, no fine-grained permissions
+  Category: Security
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §2.3: 'repo | Create pull requests on private repositories'. Applies to all repos daemon watches.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-006: Path traversal in state store via unsanitized repo_path
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.1: 'State store | ... JSON: ~/.config/pr-drafter/state/{sanitized_repo_path}.json'. No definition of 'sanitized'.
+    [Security Auditor]: §1.1: 'State store | ... JSON: ~/.config/pr-drafter/state/{sanitized_repo_path}.json'. 'sanitized' undefined.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-007: Potential SSRF via configurable LLM or GitHub API endpoints
+  Category: Observation
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §6.3: 'Egress policy: Allowlist of hostnames only'. But config for LLM/github endpoints not detailed; assumes hardcoded but env vars possible.
+    [Vulnerability Analyst]: §4.4: API is 'OpenAI-compatible'. §2.5 URL includes '{or GitHub Enterprise host}'. §7: Mentions environment variables for secrets, implying potential configuration of base URLs.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-009: LLM API key exposure risk via env vars or config
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §7: 'Environment variables for secrets'. §4: OpenAI-compatible, no storage details.
+    [Security Auditor]: §7: 'Environment variables for secrets'. §6.1: 'Env vars | Leak via /proc | Document; run as dedicated user'.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-013: Unbounded git diff output before truncation risks DoS
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §4.2: 'Truncation order: trim hunks...'. But git diff called without --unified=0 or file limits.
+    [Security Auditor]: §4.2: 'Truncation order: trim hunks'. No limits on git diff call.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-014: No YAML config deserialization security (arbitrary code exec)
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.1: 'Repo registry | YAML/JSON under ~/.config/pr-drafter/config.yaml'. No parser specified.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-015: Watcher on packed-refs misses events without heartbeat tuning
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.1: 'Watch .git/refs/heads/* and optionally packed-refs'. Heartbeat 'every 6 h'.
+    [Security Auditor]: §1.1: 'optionally packed-refs'; heartbeat 6h.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-017: OAuth token memory leakage via core dumps/swap
+  Category: Security
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §2.4: Token stored in JSON file, loaded into memory; no mention of memory protection.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-019: Path traversal via config.yaml repo paths
+  Category: Security
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §6.1: 'Local config.yaml: Path traversal — Only allowlisted keys; validate repo paths' — no validation details.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-020: SSRF via misconfigured GitHub API host
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §2.5: GitHub API URLs are configurable (implied for Enterprise); no host allowlisting.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-022: No LLM output size limits for JSON parse bombs
+  Category: Observation
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §4.2: 'Truncation order: trim hunks → collapse to headers → drop diff keep stat+commits.' — no output size limits.
+    [Security Auditor]: §4.2/§6.1: 'Strict size limits' on responses but vague.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-023: Token reuse across all repos (no scoping)
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §2.3: Scope 'repo' grants access to all private repositories.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-024: No audit logging for security events
+  Category: Observation
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §1.1: 'Logger: Structured logs to stdout + optional file' — no mention of audit trail.
+    [Security Auditor]: §1.1: 'Logger: Structured logs... no secrets'. No audit specifics.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-025: Placeholder finding
+  Category: Observation
+  Found by: gemini-3.1-pro
+  Missed by: grok-4.1-fast, deepseek-v3.2
+  Evidence:
+    [Penetration Tester]: No previous context provided to analyze.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-027: Overly broad 'repo' OAuth scope violates least privilege
+  Category: Security
+  Found by: grok-4.1-fast, deepseek-v3.2
+  Missed by: gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §2.3: 'repo | Create pull requests on private repositories'. Single token for all repos.
+    [Vulnerability Analyst]: §2.3: Required scope is 'repo' for 'Create pull requests on private repositories'. This scope grants read/write access to all repositories, issues, and other metadata the user can access.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-030: Config reload lacks repo path re-validation
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §1.3: 'Reload (SIGHUP): Re-read config.yaml'. Startup validates paths.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-031: git fetch origin uses potentially untrusted remote
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §3.2: 'git -C /path/to/repo fetch origin --prune --quiet'. Remote 'origin' from config?
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-033: No LLM API cost control or rate limiting leads to financial DoS risk
+  Category: Security
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: The entire plan lacks any mention of budget controls, rate limits, or token counting for LLM API calls. Watcher events trigger LLM calls directly after debouncing.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-037: No dependency integrity or supply chain security measures specified
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: §1.1 suggests using external crates (notify, tokio). The entire plan lacks mention of dependency pinning, auditing, or update processes.
+
+--------------------------------------------------------------------------------
+[MEDIUM] F-038: Insecure default example path suggests running as root
+  Category: Observation
+  Found by: deepseek-v3.2
+  Missed by: grok-4.1-fast, gemini-3.1-pro
+  Evidence:
+    [Vulnerability Analyst]: Document header: 'Repository root (this project): /root/pr-drafter'.
+
+--------------------------------------------------------------------------------
+[MEDIUM] JUDGE-GPT-5-4-4-F-04: PR content can become a stored XSS/phishing vehicle in GitHub-rendered markdown
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: §5.3 says: "Pass LLM markdown verbatim after JSON parse validation." The system feeds untrusted commit messages, diff text, and style files into the model, and then publishes the generated markdown to GitHub with no output sanitization policy beyond JSON shape validation.
+
+Reasoning: GitHub sanitize
+
+--------------------------------------------------------------------------------
+[MEDIUM] JUDGE-GPT-5-4-5-F-05: No protection against duplicate drafts caused by TOCTOU between GitHub search/create and concurrent jobs
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: The plan mentions "at-most-one draft job per (repo_path, head_ref)" in-memory and says for duplicates "check existing", but there is no durable idempotency key or cross-process lock tied to the remote PR creation path. State is only committed after successful API response.
+
+Reasoning: A crash, resta
+
+--------------------------------------------------------------------------------
+[MEDIUM] JUDGE-GPT-5-4-6-F-06: Branch-to-remote identity is underspecified and can create PRs from the wrong fork or repository
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: §1.2 says the GitHub client will create a draft PR with "head = remote branch name resolution" and §3.3 says "ensure branch exists on remote". The plan does not define how owner/repo/head are derived in the presence of multiple remotes, forks, or worktrees sharing refs.
+
+Reasoning: GitHub PR creatio
+
+--------------------------------------------------------------------------------
+[MEDIUM] JUDGE-GPT-5-4-7-F-07: Local health/setup endpoint risk is not bounded; localhost services can be abused by browser-driven requests
+  Category: Gap Analysis
+  Found by: Judge only (all engines missed)
+  Missed by: grok-4.1-fast, deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [ChatGPT]: The product definition allows an "optional localhost health endpoint" and the OAuth design requires a localhost callback listener. The plan does not define allowed methods, authentication, CSRF protections, or whether any mutating setup/auth actions might be exposed over localhost HTTP.
+
+Reasoning: 
+
+--------------------------------------------------------------------------------
+[LOW] F-010: Insufficient git repo validation allows symlink attacks
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §3.1: 'git -C <path> rev-parse --is-inside-work-tree → true'. §1 startup: 'validate paths exist and are git work trees'. No symlink checks.
+    [Security Auditor]: §3.1: 'git -C <path> rev-parse --is-inside-work-tree'. No symlink resolution.
+
+--------------------------------------------------------------------------------
+[LOW] F-028: SSRF risk from unallowlisted API endpoints
+  Category: Observation
+  Found by: grok-4.1-fast
+  Missed by: deepseek-v3.2, gemini-3.1-pro
+  Evidence:
+    [Security Auditor]: §6.3: 'Egress policy: Allowlist of hostnames only'. §7 env vars for config; GitHub/LLM hosts implied configurable.
+
+================================================================================
+JUDGE-ORIGINATED FINDINGS (missed by all 3 engines)
+================================================================================
+  [CRITICAL] JUDGE-GPT-5-4-2-F-02: Repository-controlled Git config can trigger arbitrary helper/program execution during git subprocesses
+  [HIGH] JUDGE-GPT-5-4-1-F-01: OAuth callback on fixed localhost port enables code interception by a local process
+  [HIGH] JUDGE-GPT-5-4-3-F-03: Remote fetch can use dangerous transport/protocol behaviors unless Git transport is restricted
+  [MEDIUM] JUDGE-GPT-5-4-4-F-04: PR content can become a stored XSS/phishing vehicle in GitHub-rendered markdown
+  [MEDIUM] JUDGE-GPT-5-4-5-F-05: No protection against duplicate drafts caused by TOCTOU between GitHub search/create and concurrent jobs
+  [MEDIUM] JUDGE-GPT-5-4-6-F-06: Branch-to-remote identity is underspecified and can create PRs from the wrong fork or repository
+  [MEDIUM] JUDGE-GPT-5-4-7-F-07: Local health/setup endpoint risk is not bounded; localhost services can be abused by browser-driven requests

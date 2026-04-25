@@ -1,0 +1,16 @@
+The plan is saved as **`/root/pr-drafter/build-plan.md`**.
+
+It is written as a single-developer V1 spec and includes:
+
+1. **Architecture** — Supervisor, repo registry, watcher (notify + poll fallback), scheduler, git adapter, context builder, LLM/GitHub clients, state store; ASCII data flow; daemon startup/reload/shutdown.
+2. **GitHub OAuth** — OAuth App on `https://github.com/settings/developers`, PKCE + loopback callback on `http://127.0.0.1:8765/oauth/callback`, scope **`repo`**, token file `~/.config/pr-drafter/github-token.json` (mode `0600`), and concrete REST calls (`GET /user`, `GET /repos/{owner}/{repo}`, `POST /repos/{owner}/{repo}/pulls` with `"draft": true`).
+3. **Git** — `rev-parse`, `merge-base`, `log`, three-dot `diff`, `--stat`; remote/branch edge cases (shallow clone, force-push, binary, worktrees); explicit bash examples.
+4. **LLM** — Default `gpt-4o-mini` / `gpt-4o`, OpenAI `POST https://api.openai.com/v1/chat/completions`, token budgeting, truncation order, JSON-only output contract.
+5. **Templates** — `context.md` vs `.pr-style.md` precedence and optional fenced template block.
+6. **Security** — Table of input vectors (repo, style files, commits, diff, config, OAuth), trust boundaries T1–T3, egress allowlist, no token in prompts/logs.
+7. **Config** — Full example `~/.config/pr-drafter/config.yaml` with defaults table and env vars.
+8. **Errors** — Transient vs 422 vs bad JSON; state only after successful API; idempotency key `(repo, branch, head_sha)`.
+9. **Testing** — Unit, integration with temp repos + HTTP mocks, manual checklist, optional CI.
+10. **Deployment** — Directory layout, `cargo build` / `install`, `install.sh` behavior, full **`systemd --user`** unit with `systemctl`/`journalctl` commands.
+
+Section **11** adds implementation milestones; **12** lists open product decisions (update draft vs new PR, auto-fetch, title fallback). If you want the next step to be scaffolding the repo (`Cargo.toml`, `config.example.yaml`, `scripts/`), say so and we can align it line-for-line with this plan.
