@@ -27,7 +27,7 @@ One prompt, one model. Cursor Agent found **23 vulnerabilities:**
 
 Cursor caught the core issues: command injection via git subprocess args, prompt injection from repo files, token exfiltration through LLM payloads, path traversal in state store, TOCTOU races, OAuth CSRF, SSRF via configurable endpoints.
 
-### MegaLens MCP (3 engines + GPT 5.4 judge)
+### MegaLens MCP (Grok 4.1 Fast, DeepSeek V3.2, Gemini 3.1 Pro, GPT 5.4)
 
 Same plan, one MCP tool call. Found **45 vulnerabilities:**
 
@@ -38,16 +38,16 @@ Same plan, one MCP tool call. Found **45 vulnerabilities:**
 | Medium | 26 |
 | Low | 2 |
 
-MegaLens used 3 independent engines (Grok 4.1 Fast, DeepSeek V3.2, Gemini 3.1 Pro) debating in 2 rounds, with GPT 5.4 as final judge.
+MegaLens ran four models from different companies on this plan: Grok 4.1 Fast, DeepSeek V3.2, Gemini 3.1 Pro and GPT 5.4.
 
 ### The delta: 22 additional findings
 
-Issues that Cursor's solo review missed but multi-engine debate caught:
+Issues that Cursor's solo review missed but MegaLens caught:
 
-- **Git config helper execution** — repository `.gitconfig` can define custom diff/merge tools, credential helpers, and aliases that execute arbitrary code when the daemon runs `git -C <repo> diff`. All 3 engines missed this; the GPT 5.4 judge caught it independently (Critical)
-- **OAuth callback port hijacking** — fixed localhost port `8765` lets any local process race to bind first and intercept the authorization code. Judge-only finding (High)
-- **Git transport protocol abuse** — `git fetch` can use SSH/Git protocols that trigger remote code execution via ProxyCommand or external transport helpers. Judge-only finding (High)
-- **Stored XSS via PR markdown** — LLM output passes verbatim to GitHub PR body; crafted markdown with `<img>` tags or JavaScript URIs becomes a stored XSS vector for anyone viewing the PR. Judge-only finding (Medium)
+- **Git config helper execution**: repository `.gitconfig` can define custom diff/merge tools, credential helpers, and aliases that execute arbitrary code when the daemon runs `git -C <repo> diff`. Grok, DeepSeek and Gemini missed this; GPT 5.4 caught it (Critical)
+- **OAuth callback port hijacking**: fixed localhost port `8765` lets any local process race to bind first and intercept the authorization code. Found by GPT 5.4 only (High)
+- **Git transport protocol abuse**: `git fetch` can use SSH/Git protocols that trigger remote code execution via ProxyCommand or external transport helpers. Found by GPT 5.4 only (High)
+- **Stored XSS via PR markdown**: LLM output passes verbatim to GitHub PR body; crafted markdown with `<img>` tags or JavaScript URIs becomes a stored XSS vector for anyone viewing the PR. Found by GPT 5.4 only (Medium)
 - **YAML deserialization RCE** — config.yaml parsed without safe-load specification; unsafe YAML constructors (`!!python/object`) enable code execution (Critical)
 - **Git subprocess resource exhaustion** — no timeout or output size limit on `git diff`/`git log` subprocesses; a repo with 10GB history causes OOM or indefinite hang (Critical)
 - **Force-push state corruption** — SHA-based state tracking breaks on history rewrites; daemon creates duplicate PRs or enters hot loop (Critical)
@@ -62,26 +62,23 @@ Issues that Cursor's solo review missed but multi-engine debate caught:
 
 ### Why multi-engine matters
 
-The 7 judge-originated findings are the most striking: issues that **all three debater engines independently missed**, but the GPT 5.4 judge caught by reasoning about the intersection of their analyses. The git config helper execution finding (Critical) is a real-world attack vector that single-model reviews consistently miss because it requires understanding Git's internal extension points, not just the daemon's code.
+The 7 findings that only GPT 5.4 raised are the most striking: **Grok, DeepSeek and Gemini all missed them**. The git config helper execution finding (Critical) is a real-world attack vector that single-model reviews consistently miss because it requires understanding Git's internal extension points, not just the daemon's code.
 
-When engines disagree, that's signal. Grok found YAML deserialization RCE that DeepSeek and Gemini missed. DeepSeek found git subprocess resource exhaustion that the others missed. The debate surfaces these blind spots.
+When engines disagree, that's signal. Grok found YAML deserialization RCE that DeepSeek and Gemini missed. DeepSeek found git subprocess resource exhaustion that the others missed. Running several models surfaces these blind spots.
 
 ### Performance
 
 | Metric | Value |
 |--------|-------|
-| Engines | Grok 4.1 Fast + DeepSeek V3.2 + Gemini 3.1 Pro |
-| Judge | GPT 5.4 |
-| Rounds | 2 (structured debate) |
+| Models | Grok 4.1 Fast, DeepSeek V3.2, Gemini 3.1 Pro, GPT 5.4 |
 | Total time | 419s (7.0 min) |
 | Total cost | $0.22 (BYOK via OpenRouter) |
-| Tier | Standard (3 engines + judge) |
 
 ## Review outputs
 
 - [`build-plan.md`](build-plan.md) — Full V1 engineering build plan
 - [`results/step2-cursor-solo-review.txt`](results/step2-cursor-solo-review.txt) — Cursor Agent solo review (23 findings)
-- [`results/step3-megalens-audit.txt`](results/step3-megalens-audit.txt) — MegaLens multi-engine audit (45 findings)
+- The raw MegaLens output file (45 findings) was removed on 23 September 2026 because it showed internal role labels. Its findings are summarized above.
 
 ## The tool itself
 
